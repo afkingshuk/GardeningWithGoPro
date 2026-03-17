@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GoPro Gardening render/upload after midnight
+
+[Timer]
+OnCalendar=*-*-* 00:15:00
+Persistent=true
+Unit=gopro-encode.service
+
+[Install]
+WantedBy=timers.target

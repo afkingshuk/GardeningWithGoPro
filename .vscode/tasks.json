@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Setup venv",
+      "type": "shell",
+      "command": "bash scripts/setup_linux_mint.sh"
+    },
+    {
+      "label": "Pipeline sync",
+      "type": "shell",
+      "command": "source .venv/bin/activate && PYTHONPATH=src python -m gopro_gardening.cli sync",
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": ["-lc"]
+        }
+      }
+    },
+    {
+      "label": "Pipeline encode-upload",
+      "type": "shell",
+      "command": "source .venv/bin/activate && PYTHONPATH=src python -m gopro_gardening.cli encode-upload",
+      "options": {
+        "shell": {
+          "executable": "/bin/bash",
+          "args": ["-lc"]
+        }
+      }
+    }
+  ]
+}

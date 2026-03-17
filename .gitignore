@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.swp
+*.log
+.env
+config/config.local.yaml
+state/*.db
+state/*.sqlite
+state/*.sqlite3
+logs/*.log
+data/raw/
+data/indexed/
+data/renders/
+data/reports/
+.vscode/settings.local.json

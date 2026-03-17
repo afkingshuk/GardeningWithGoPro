@@ -1,0 +1,51 @@
+app:
+  timezone: America/New_York
+  workspace: .
+  log_level: INFO
+  state_db: state/pipeline.sqlite3
+
+gopro:
+  base_url: http://10.5.5.9:8080/videos/DCIM/
+  wifi_connection_name: K GoPro MAX
+  request_timeout_seconds: 30
+  media_extensions:
+    - .jpg
+    - .jpeg
+
+home_network:
+  wifi_connection_name: No_Connection
+
+paths:
+  raw_dir: data/raw
+  indexed_dir: data/indexed
+  renders_dir: data/renders
+  reports_dir: data/reports
+  logs_dir: logs
+
+sync:
+  stable_file_min_age_seconds: 120
+  retry_failed_downloads: true
+  max_retries: 3
+  user_agent: gopro-gardening-pipeline/0.1
+
+encoding:
+  fps: 24
+  codec: libx264
+  crf: 18
+  preset: medium
+  pixel_format: yuv420p
+  output_extension: mp4
+  skip_current_day: true
+  min_frames_for_render: 300
+  include_overlay_report: false
+
+nas:
+  enabled: false
+  mount_point: /mnt/knas
+  target_dir: /mnt/knas/GoPro/GardeningWithGoPro
+  mount_script: scripts/mount_nas.sh
+  unmount_script: scripts/unmount_nas.sh
+  use_rsync: true
+
+reports:
+  write_daily_report: true

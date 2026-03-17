@@ -1,0 +1,5 @@
+profiles:
+  gopro:
+    connection_name: K GoPro MAX
+  home:
+    connection_name: No_Connection

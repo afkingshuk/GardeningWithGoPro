@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run sync",
+      "type": "python",
+      "request": "launch",
+      "module": "gopro_gardening.cli",
+      "args": ["sync"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Run encode-upload",
+      "type": "python",
+      "request": "launch",
+      "module": "gopro_gardening.cli",
+      "args": ["encode-upload"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    }
+  ]
+}

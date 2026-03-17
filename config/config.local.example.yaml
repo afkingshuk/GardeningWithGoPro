@@ -1,0 +1,22 @@
+app:
+  timezone: America/New_York
+  workspace: /home/youruser/repos/gopro-gardening-pipeline
+
+gopro:
+  wifi_connection_name: K GoPro MAX
+
+home_network:
+  wifi_connection_name: No_Connection
+
+nas:
+  enabled: false
+  mount_point: /mnt/knas
+  target_dir: /mnt/knas/GoPro/GardeningWithGoPro
+  mount_script: scripts/mount_nas.sh
+  unmount_script: scripts/unmount_nas.sh
+
+encoding:
+  fps: 24
+  codec: libx264
+  crf: 18
+  preset: medium

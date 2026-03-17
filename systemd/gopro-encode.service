@@ -1,0 +1,9 @@
+[Unit]
+Description=GoPro Gardening midnight render and upload
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT__
+ExecStart=/usr/bin/env bash __ROOT__/scripts/run_midnight_encode.sh

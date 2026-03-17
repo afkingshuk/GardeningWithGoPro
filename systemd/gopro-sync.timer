@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GoPro Gardening sync every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=gopro-sync.service
+
+[Install]
+WantedBy=timers.target
