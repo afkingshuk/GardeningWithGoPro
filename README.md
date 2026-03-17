@@ -68,7 +68,7 @@ Important fields:
 
 Set these in `config/config.local.yaml` before relying on the timers:
 
-- `app.workspace`: optional now; leave it as `.` if the pipeline should use the clone directory itself.
+- `app.workspace`: defaults to `../GardeningWithGoProStorage`, which puts data/state/logs one level above the repo clone.
 - `gopro.wifi_connection_name`: the NetworkManager connection profile name for the GoPro Wi-Fi.
 - `home_network.wifi_connection_name`: the NetworkManager connection profile name for your normal Wi-Fi. Leave it empty only if you do not want the app to force a reconnect.
 - `nas.enabled`: defaults to `false`. Turn it on only after you finish the NAS configuration below.

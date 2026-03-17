@@ -1,6 +1,6 @@
 app:
   timezone: America/New_York
-  workspace: /home/youruser/repos/gopro-gardening-pipeline
+  workspace: ../GardeningWithGoProStorage
 
 gopro:
   wifi_connection_name: K GoPro MAX

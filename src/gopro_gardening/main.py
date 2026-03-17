@@ -148,4 +148,4 @@ def run_encode_upload(context: AppContext) -> None:
 
 def run_healthcheck(context: AppContext) -> None:
     logger.info("Healthcheck OK")
-    logger.info("Wor
+    logger.info("Workspace: %s", context.root_dir)

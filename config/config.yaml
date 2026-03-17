@@ -1,6 +1,6 @@
 app:
   timezone: America/New_York
-  workspace: .
+  workspace: ../GardeningWithGoProStorage
   log_level: INFO
   state_db: state/pipeline.sqlite3
 
