@@ -179,15 +179,29 @@ class GoProClient:
                 existing_bytes = 0
 
             content_length = self._parse_int(r.headers.get("Content-Length"))
-            expected_size = remote_file.size_bytes
-            if expected_size is None:
-                if append_mode:
-                    expected_size = (
-                        self._parse_content_range_total(r.headers.get("Content-Range"))
-                        or (existing_bytes + content_length if content_length is not None else None)
-                    )
-                else:
-                    expected_size = content_length
+            response_total_size = None
+            if append_mode:
+                response_total_size = (
+                    self._parse_content_range_total(r.headers.get("Content-Range"))
+                    or (existing_bytes + content_length if content_length is not None else None)
+                )
+            else:
+                response_total_size = content_length
+
+            if (
+                remote_file.size_bytes is not None
+                and response_total_size is not None
+                and remote_file.size_bytes != response_total_size
+            ):
+                logger.warning(
+                    "Media-list size mismatch for %s/%s: api=%d http=%d; using HTTP size",
+                    remote_file.media_dir,
+                    remote_file.filename,
+                    remote_file.size_bytes,
+                    response_total_size,
+                )
+
+            expected_size = response_total_size if response_total_size is not None else remote_file.size_bytes
             header_timestamp = r.headers.get("Last-Modified")
             file_timestamp = remote_file.created_at or remote_file.modified_at
             if not file_timestamp and header_timestamp:

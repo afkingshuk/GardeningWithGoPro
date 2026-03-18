@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -180,12 +181,29 @@ def run_healthcheck(context: AppContext) -> None:
     if missing:
         raise RuntimeError(f"Missing required commands: {', '.join(sorted(missing))}")
 
+    connections = set(context.wifi.list_connections())
+    if context.wifi.gopro_connection not in connections:
+        raise RuntimeError(
+            f"GoPro NetworkManager connection not found: {context.wifi.gopro_connection}"
+        )
+    if context.wifi.home_connection and context.wifi.home_connection not in connections:
+        raise RuntimeError(
+            f"Home NetworkManager connection not found: {context.wifi.home_connection}"
+        )
+
     if context.config["nas"].get("enabled", True):
         mount_method = context.config["nas"].get("mount_method", "fstab")
         if mount_method == "cifs" and not context.config["nas"].get("share"):
             raise RuntimeError("nas.share is required when nas.mount_method is cifs")
         if context.nas.credentials_file and not context.nas.credentials_file.exists():
             raise RuntimeError(f"NAS credentials file not found: {context.nas.credentials_file}")
+        if context.nas.mount_point:
+            mount_parent = context.nas.mount_point.parent
+            if not context.nas.mount_point.exists() and not os.access(mount_parent, os.W_OK) and not context.nas.use_sudo:
+                raise RuntimeError(
+                    f"Cannot create NAS mount point without elevated permissions: {context.nas.mount_point}. "
+                    "Either create it first or set nas.use_sudo: true."
+                )
 
     (context.root_dir / context.config["paths"]["raw_dir"]).mkdir(parents=True, exist_ok=True)
     (context.root_dir / context.config["paths"]["indexed_dir"]).mkdir(parents=True, exist_ok=True)

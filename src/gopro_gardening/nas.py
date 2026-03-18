@@ -75,7 +75,7 @@ class NASUploader:
         if not self.mount_point:
             raise RuntimeError("NAS mount_point is required")
 
-        self.mount_point.mkdir(parents=True, exist_ok=True)
+        subprocess.run(self._wrap_command(["mkdir", "-p", str(self.mount_point)]), check=True)
         if self.mount_method == "fstab":
             cmd = ["mount", str(self.mount_point)]
         elif self.mount_method == "cifs":

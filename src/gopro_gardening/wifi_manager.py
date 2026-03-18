@@ -14,7 +14,20 @@ class WifiManager:
 
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         logger.info("Running command: %s", " ".join(args))
-        return subprocess.run(args, check=check, text=True, capture_output=True)
+        try:
+            return subprocess.run(args, check=check, text=True, capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            stdout = exc.stdout.strip() if exc.stdout else ""
+            stderr = exc.stderr.strip() if exc.stderr else ""
+            details = " | ".join(part for part in [stdout, stderr] if part)
+            message = f"Command failed: {' '.join(args)}"
+            if details:
+                message = f"{message} | {details}"
+            raise RuntimeError(message) from exc
+
+    def list_connections(self) -> list[str]:
+        result = self._run("nmcli", "-t", "-f", "NAME", "connection", "show")
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
     def connect_gopro(self) -> None:
         self._run("nmcli", "connection", "up", self.gopro_connection)

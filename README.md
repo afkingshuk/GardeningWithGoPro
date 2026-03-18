@@ -83,7 +83,7 @@ Set these in `config/config.local.yaml` before relying on the timers:
 - `nas.mount_method`: use `fstab` if the mount is defined in `/etc/fstab`, or `cifs` for a direct SMB mount from the app.
 - `nas.share`: required when `nas.mount_method: cifs`.
 - `nas.credentials_file`: recommended for SMB credentials, for example `~/.smbcredentials-gopro`.
-- `nas.use_sudo`: set to `true` if your mount/umount commands require `sudo -n`.
+- `nas.use_sudo`: set to `true` if mount point creation or mount/umount require `sudo -n`.
 - `nas.mount_options`: optional extra mount options for SMB.
 - `sync.stable_file_min_age_seconds`: how long a remote file must be unchanged before it is eligible to sync.
 - `sync.max_retries`: how many attempts to make before leaving a file for the next cycle.
@@ -103,12 +103,14 @@ Recommended unattended Mint setup:
 
 1. Create a local credentials file such as `~/.smbcredentials-gopro` with your SMB username/password.
 2. Run `chmod 600 ~/.smbcredentials-gopro`.
-3. Choose one of these approaches:
+3. Make sure the NetworkManager profiles named in `config.local.yaml` actually exist on Mint.
+   For the GoPro profile, the simplest path is to turn on the GoPro Wi-Fi and connect to it once manually in the Mint network UI so NetworkManager saves the profile.
+4. Choose one of these approaches:
 
 - `nas.mount_method: fstab`
   Add an `/etc/fstab` entry for `/mnt/knas` that uses your credentials file, then let the app call `mount /mnt/knas` and `umount /mnt/knas`.
 - `nas.mount_method: cifs`
-  Set `nas.share`, `nas.credentials_file`, and optionally `nas.use_sudo: true` if the mount requires `sudo -n`.
+  Set `nas.share`, `nas.credentials_file`, and usually `nas.use_sudo: true` if the mount is under `/mnt`.
 
 ## Development from main PC
 
@@ -137,6 +139,7 @@ PYTHONPATH=src python -m gopro_gardening.cli unmount-nas
 
 - The sync engine only downloads missing files.
 - Interrupted downloads are resumed from `.part` files when the GoPro server supports HTTP range requests.
+- GoPro Wi-Fi sync may fail while the camera is actively capturing; the next scheduled run should retry once the camera is idle and the Wi-Fi API is available again.
 - Capture date is determined from EXIF first, then filesystem mtime.
 - If the GoPro media-list API provides timestamps, synced files inherit that remote timestamp so fallback ordering is still meaningful.
 - Images are organized by capture date, not sync time.
