@@ -3,7 +3,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .main import build_context, run_encode_upload, run_healthcheck, run_sync
+from .main import (
+    build_context,
+    run_encode_upload,
+    run_healthcheck,
+    run_mount_nas,
+    run_sync,
+    run_unmount_nas,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -12,6 +19,8 @@ def parse_args() -> argparse.Namespace:
     sub.add_parser("sync")
     sub.add_parser("encode-upload")
     sub.add_parser("healthcheck")
+    sub.add_parser("mount-nas")
+    sub.add_parser("unmount-nas")
     return parser.parse_args()
 
 
@@ -26,6 +35,10 @@ def main() -> None:
         run_encode_upload(context)
     elif args.command == "healthcheck":
         run_healthcheck(context)
+    elif args.command == "mount-nas":
+        run_mount_nas(context)
+    elif args.command == "unmount-nas":
+        run_unmount_nas(context)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +50,15 @@ def _current_capture_date(config: Dict[str, Any]) -> str:
     return datetime.now(tzinfo).date().isoformat()
 
 
+def _resolve_target_dir(root_dir: Path, mount_point: Path | None, value: str) -> Path:
+    target_dir = Path(value).expanduser()
+    if target_dir.is_absolute():
+        return target_dir
+    if mount_point is not None:
+        return (mount_point / target_dir).resolve()
+    return (root_dir / target_dir).resolve()
+
+
 def build_context(root_dir: Path) -> AppContext:
     root_dir = root_dir.resolve()
     config = load_config(root_dir)
@@ -73,6 +83,10 @@ def build_context(root_dir: Path) -> AppContext:
         raw_dir=workspace / config["paths"]["raw_dir"],
         indexed_dir=workspace / config["paths"]["indexed_dir"],
         media_extensions=config["gopro"]["media_extensions"],
+        timezone_name=config["app"].get("timezone", "UTC"),
+        stable_file_min_age_seconds=int(config["sync"].get("stable_file_min_age_seconds", 0)),
+        retry_failed_downloads=bool(config["sync"].get("retry_failed_downloads", True)),
+        max_retries=int(config["sync"].get("max_retries", 3)),
     )
     encoder = Encoder(
         indexed_dir=workspace / config["paths"]["indexed_dir"],
@@ -85,11 +99,20 @@ def build_context(root_dir: Path) -> AppContext:
         pixel_format=config["encoding"]["pixel_format"],
         output_extension=config["encoding"]["output_extension"],
     )
+    nas_mount_point = _resolve_path(root_dir, config["nas"].get("mount_point"))
     nas = NASUploader(
-        target_dir=Path(config["nas"]["target_dir"]).expanduser(),
-        mount_point=_resolve_path(root_dir, config["nas"].get("mount_point")),
+        target_dir=_resolve_target_dir(root_dir, nas_mount_point, config["nas"]["target_dir"]),
+        mount_point=nas_mount_point,
         mount_script=_resolve_path(root_dir, config["nas"].get("mount_script")),
         unmount_script=_resolve_path(root_dir, config["nas"].get("unmount_script")),
+        mount_method=config["nas"].get("mount_method", "fstab"),
+        share=config["nas"].get("share"),
+        protocol=config["nas"].get("protocol", "cifs"),
+        credentials_file=_resolve_path(root_dir, config["nas"].get("credentials_file")),
+        version=config["nas"].get("version"),
+        mount_options=config["nas"].get("mount_options", []),
+        use_sudo=bool(config["nas"].get("use_sudo", False)),
+        use_rsync=bool(config["nas"].get("use_rsync", True)),
     )
 
     return AppContext(
@@ -125,11 +148,11 @@ def run_encode_upload(context: AppContext) -> None:
     for capture_date in context.state_db.iter_capture_dates_pending_render():
         if skip_current_day and capture_date >= today:
             continue
-        frames = context.encoder.get_frame_paths(capture_date)
+        frames = [record.path for record in context.state_db.list_day_media(capture_date) if record.path.exists()]
         if len(frames) < min_frames:
             logger.warning("Skipping %s; only %d frames", capture_date, len(frames))
             continue
-        output_video, frame_count = context.encoder.render_day(capture_date)
+        output_video, frame_count = context.encoder.render_day(capture_date, frame_paths=frames)
         context.state_db.mark_rendered(capture_date, str(output_video), frame_count)
 
         if context.config["nas"].get("enabled", True) and not context.state_db.is_uploaded(capture_date):
@@ -147,5 +170,39 @@ def run_encode_upload(context: AppContext) -> None:
 
 
 def run_healthcheck(context: AppContext) -> None:
-    logger.info("Healthcheck OK")
+    required_commands = ["nmcli", "ffmpeg"]
+    if context.config["nas"].get("enabled", True):
+        required_commands.append("rsync" if context.config["nas"].get("use_rsync", True) else "cp")
+        required_commands.append("mountpoint")
+        required_commands.extend(["mount", "umount"])
+
+    missing = [command for command in required_commands if shutil.which(command) is None]
+    if missing:
+        raise RuntimeError(f"Missing required commands: {', '.join(sorted(missing))}")
+
+    if context.config["nas"].get("enabled", True):
+        mount_method = context.config["nas"].get("mount_method", "fstab")
+        if mount_method == "cifs" and not context.config["nas"].get("share"):
+            raise RuntimeError("nas.share is required when nas.mount_method is cifs")
+        if context.nas.credentials_file and not context.nas.credentials_file.exists():
+            raise RuntimeError(f"NAS credentials file not found: {context.nas.credentials_file}")
+
+    (context.root_dir / context.config["paths"]["raw_dir"]).mkdir(parents=True, exist_ok=True)
+    (context.root_dir / context.config["paths"]["indexed_dir"]).mkdir(parents=True, exist_ok=True)
+    (context.root_dir / context.config["paths"]["renders_dir"]).mkdir(parents=True, exist_ok=True)
+    (context.root_dir / context.config["paths"]["reports_dir"]).mkdir(parents=True, exist_ok=True)
+    (context.root_dir / context.config["paths"]["logs_dir"]).mkdir(parents=True, exist_ok=True)
     logger.info("Workspace: %s", context.root_dir)
+    logger.info("Healthcheck OK")
+
+
+def run_mount_nas(context: AppContext) -> None:
+    logger.info("Mounting NAS")
+    context.nas.mount_direct()
+    logger.info("NAS mounted")
+
+
+def run_unmount_nas(context: AppContext) -> None:
+    logger.info("Unmounting NAS")
+    context.nas.unmount_direct()
+    logger.info("NAS unmounted")

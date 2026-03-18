@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -11,6 +13,7 @@ CREATE TABLE IF NOT EXISTS downloaded_files (
     media_dir TEXT NOT NULL,
     filename TEXT NOT NULL,
     local_path TEXT NOT NULL,
+    indexed_path TEXT,
     size_bytes INTEGER,
     capture_ts TEXT,
     capture_date TEXT,
@@ -33,13 +36,38 @@ CREATE TABLE IF NOT EXISTS uploaded_days (
 """
 
 
+@dataclass(frozen=True)
+class DayMediaRecord:
+    filename: str
+    path: Path
+    capture_ts: datetime | None
+
+
 class StateDB:
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.executescript(SCHEMA)
+        self._ensure_downloaded_file_columns()
         self.conn.commit()
+
+    def _ensure_downloaded_file_columns(self) -> None:
+        columns = {
+            row[1]
+            for row in self.conn.execute("PRAGMA table_info(downloaded_files)").fetchall()
+        }
+        if "indexed_path" not in columns:
+            self.conn.execute("ALTER TABLE downloaded_files ADD COLUMN indexed_path TEXT")
+
+    @staticmethod
+    def _parse_capture_ts(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
     def has_downloaded(self, media_dir: str, filename: str) -> bool:
         cur = self.conn.execute(
@@ -53,17 +81,18 @@ class StateDB:
         media_dir: str,
         filename: str,
         local_path: str,
+        indexed_path: Optional[str],
         size_bytes: int,
         capture_ts: Optional[str],
         capture_date: Optional[str],
     ) -> None:
         self.conn.execute(
             """
-            INSERT OR IGNORE INTO downloaded_files
-            (media_dir, filename, local_path, size_bytes, capture_ts, capture_date)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO downloaded_files
+            (media_dir, filename, local_path, indexed_path, size_bytes, capture_ts, capture_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (media_dir, filename, local_path, size_bytes, capture_ts, capture_date),
+            (media_dir, filename, local_path, indexed_path, size_bytes, capture_ts, capture_date),
         )
         self.conn.commit()
 
@@ -97,3 +126,35 @@ class StateDB:
             (capture_date, target_path),
         )
         self.conn.commit()
+
+    def list_day_media(self, capture_date: str) -> list[DayMediaRecord]:
+        cur = self.conn.execute(
+            """
+            SELECT filename, COALESCE(indexed_path, local_path), capture_ts
+            FROM downloaded_files
+            WHERE capture_date = ?
+            """,
+            (capture_date,),
+        )
+        records = [
+            DayMediaRecord(
+                filename=row[0],
+                path=Path(row[1]),
+                capture_ts=self._parse_capture_ts(row[2]),
+            )
+            for row in cur.fetchall()
+        ]
+        return sorted(
+            records,
+            key=lambda record: (
+                record.capture_ts is None,
+                (
+                    record.capture_ts.astimezone(timezone.utc).isoformat()
+                    if record.capture_ts and record.capture_ts.tzinfo
+                    else record.capture_ts.isoformat()
+                    if record.capture_ts
+                    else ""
+                ),
+                record.filename,
+            ),
+        )

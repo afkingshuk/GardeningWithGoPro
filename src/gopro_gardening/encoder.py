@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from datetime import date
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +35,8 @@ class Encoder:
         day_dir = self.indexed_dir / capture_date
         return sorted([p for p in day_dir.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg"}])
 
-    def render_day(self, capture_date: str) -> Tuple[Path, int]:
-        frames = self.get_frame_paths(capture_date)
+    def render_day(self, capture_date: str, frame_paths: list[Path] | None = None) -> Tuple[Path, int]:
+        frames = frame_paths if frame_paths is not None else self.get_frame_paths(capture_date)
         if not frames:
             raise FileNotFoundError(f"No frames found for {capture_date}")
 

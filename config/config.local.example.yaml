@@ -12,6 +12,13 @@ nas:
   enabled: false
   mount_point: /mnt/knas
   target_dir: /mnt/knas/GoPro/GardeningWithGoPro
+  mount_method: fstab
+  protocol: cifs
+  share: //knas.local/incoming
+  credentials_file: ~/.smbcredentials-gopro
+  version: "3.0"
+  mount_options: []
+  use_sudo: false
   mount_script: scripts/mount_nas.sh
   unmount_script: scripts/unmount_nas.sh
 
