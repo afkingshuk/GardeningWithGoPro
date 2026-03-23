@@ -71,6 +71,8 @@ class SyncEngine:
         logger.info("Downloaded new file: %s", final_path)
 
     def sync_missing_files(self) -> Dict[str, int]:
+        remote_total = 0
+        eligible_total = 0
         downloaded = 0
         skipped = 0
         unstable = 0
@@ -82,11 +84,13 @@ class SyncEngine:
         self.indexed_dir.mkdir(parents=True, exist_ok=True)
 
         for remote_file in self.client.list_media_files():
+            remote_total += 1
             if not remote_file.filename.lower().endswith(self.media_extensions):
                 ignored_extension += 1
                 suffix = Path(remote_file.filename).suffix.lower() or "<noext>"
                 ignored_extensions[suffix] += 1
                 continue
+            eligible_total += 1
             if self.state_db.has_downloaded(remote_file.media_dir.rstrip("/"), remote_file.filename):
                 skipped += 1
                 continue
@@ -143,6 +147,8 @@ class SyncEngine:
             )
 
         return {
+            "remote_total": remote_total,
+            "eligible_total": eligible_total,
             "downloaded": downloaded,
             "skipped": skipped,
             "unstable": unstable,

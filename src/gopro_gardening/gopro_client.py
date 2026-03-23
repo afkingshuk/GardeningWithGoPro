@@ -133,16 +133,48 @@ class GoProClient:
 
     def _list_media_files_via_html(self) -> list[RemoteMediaFile]:
         files: list[RemoteMediaFile] = []
-        for media_dir in self.list_media_dirs():
-            for filename in self.list_files(media_dir):
+        try:
+            media_dirs = self.list_media_dirs()
+        except Exception as exc:
+            logger.warning("Failed to list media directories via HTML endpoint: %s", exc)
+            return files
+
+        for media_dir in media_dirs:
+            try:
+                dir_files = self.list_files(media_dir)
+            except Exception as exc:
+                logger.warning("Failed to list files for %s via HTML endpoint: %s", media_dir, exc)
+                continue
+            for filename in dir_files:
                 files.append(RemoteMediaFile(media_dir=media_dir.rstrip("/"), filename=filename))
         return files
 
     def list_media_files(self) -> list[RemoteMediaFile]:
-        files = self._list_media_files_via_api()
-        if files:
-            return files
-        return self._list_media_files_via_html()
+        api_files = self._list_media_files_via_api()
+        html_files = self._list_media_files_via_html()
+
+        if not api_files and not html_files:
+            return []
+
+        merged: dict[tuple[str, str], RemoteMediaFile] = {}
+        for file_info in html_files:
+            merged[(file_info.media_dir, file_info.filename)] = file_info
+        for file_info in api_files:
+            merged[(file_info.media_dir, file_info.filename)] = file_info
+
+        if api_files and html_files and len(api_files) != len(html_files):
+            logger.warning(
+                "Media list source count mismatch: api=%d html=%d merged=%d",
+                len(api_files),
+                len(html_files),
+                len(merged),
+            )
+        elif api_files and not html_files:
+            logger.info("Using API media list only (%d files); HTML listing unavailable", len(api_files))
+        elif html_files and not api_files:
+            logger.info("Using HTML media list only (%d files); API listing unavailable", len(html_files))
+
+        return sorted(merged.values(), key=lambda item: (item.media_dir, item.filename))
 
     def list_media_dirs(self) -> List[str]:
         links = self._get_links(self.base_url)
