@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,12 +75,17 @@ class SyncEngine:
         skipped = 0
         unstable = 0
         failed = 0
+        ignored_extension = 0
+        ignored_extensions: Counter[str] = Counter()
 
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.indexed_dir.mkdir(parents=True, exist_ok=True)
 
         for remote_file in self.client.list_media_files():
             if not remote_file.filename.lower().endswith(self.media_extensions):
+                ignored_extension += 1
+                suffix = Path(remote_file.filename).suffix.lower() or "<noext>"
+                ignored_extensions[suffix] += 1
                 continue
             if self.state_db.has_downloaded(remote_file.media_dir.rstrip("/"), remote_file.filename):
                 skipped += 1
@@ -124,9 +130,22 @@ class SyncEngine:
                 if attempt == attempts:
                     failed += 1
 
+        if ignored_extensions:
+            summary = ", ".join(
+                f"{extension}:{count}"
+                for extension, count in ignored_extensions.most_common(5)
+            )
+            logger.info(
+                "Ignored %d files by extension filter (%s). Allowed extensions: %s",
+                ignored_extension,
+                summary,
+                ", ".join(self.media_extensions),
+            )
+
         return {
             "downloaded": downloaded,
             "skipped": skipped,
             "unstable": unstable,
             "failed": failed,
+            "ignored_extension": ignored_extension,
         }

@@ -63,6 +63,7 @@ Use `config/config.local.yaml` for machine-specific settings. The loader reads:
 Important fields:
 
 - GoPro Wi-Fi connection name in NetworkManager
+- GoPro media extensions to sync (for example `.jpg`, `.jpeg`, `.gpr`)
 - Home Wi-Fi connection name in NetworkManager
 - workspace path
 - NAS mount method / mount point / target path
@@ -76,6 +77,7 @@ Set these in `config/config.local.yaml` before relying on the timers:
 
 - `app.workspace`: defaults to `../GardeningWithGoProStorage`, which puts data/state/logs one level above the repo clone.
 - `gopro.wifi_connection_name`: the NetworkManager connection profile name for the GoPro Wi-Fi.
+- `gopro.media_extensions`: extensions eligible for sync. Default includes `.jpg`, `.jpeg`, and `.gpr`.
 - `home_network.wifi_connection_name`: the NetworkManager connection profile name for your normal Wi-Fi.
 - `nas.enabled`: defaults to `false`. Turn it on only after you finish the NAS configuration below.
 - `nas.mount_point`: where the NAS will be mounted on Mint.
@@ -138,6 +140,7 @@ PYTHONPATH=src python -m gopro_gardening.cli unmount-nas
 ## Notes
 
 - The sync engine only downloads missing files.
+- Sync stats include `ignored_extension` for files filtered out by `gopro.media_extensions`.
 - Interrupted downloads are resumed from `.part` files when the GoPro server supports HTTP range requests.
 - GoPro Wi-Fi sync may fail while the camera is actively capturing; the next scheduled run should retry once the camera is idle and the Wi-Fi API is available again.
 - Capture date is determined from EXIF first, then filesystem mtime.

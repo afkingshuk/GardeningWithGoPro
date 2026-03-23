@@ -11,6 +11,7 @@ gopro:
   media_extensions:
     - .jpg
     - .jpeg
+    - .gpr
 
 home_network:
   wifi_connection_name: No_Connection
