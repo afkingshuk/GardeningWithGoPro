@@ -16,7 +16,12 @@ from .main import (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="GoPro Gardening pipeline")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("sync")
+    sync_parser = sub.add_parser("sync")
+    sync_parser.add_argument(
+        "--source",
+        default=None,
+        help="Sync source override: wifi or sdcard (defaults to sync.source in config).",
+    )
     sub.add_parser("encode-upload")
     sub.add_parser("healthcheck")
     sub.add_parser("mount-nas")
@@ -30,7 +35,7 @@ def main() -> None:
     context = build_context(root_dir)
 
     if args.command == "sync":
-        run_sync(context)
+        run_sync(context, source_override=args.source)
     elif args.command == "encode-upload":
         run_encode_upload(context)
     elif args.command == "healthcheck":

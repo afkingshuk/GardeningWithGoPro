@@ -6,10 +6,10 @@ A GitHub-backed, VS Code-friendly pipeline for syncing timelapse images from a G
 
 - Linux Mint box runs unattended.
 - Hourly job:
-  - joins GoPro Wi-Fi
-  - syncs missing images from `http://10.5.5.9:8080/videos/DCIM/`
-  - organizes images by capture date
-  - returns to home Wi-Fi
+  - runs sync in configured mode (`wifi` or `sdcard`)
+  - `wifi`: joins GoPro Wi-Fi, syncs missing images from `http://10.5.5.9:8080/videos/DCIM/`, then returns to home Wi-Fi
+  - `sdcard`: scans the mounted SD card `DCIM` tree, copies missing files into workspace raw storage, and registers them in SQLite
+  - organizes images by capture date in both modes
 - Midnight job:
   - renders one 24-hour video per capture date
   - uploads the finished video to NAS
@@ -64,6 +64,8 @@ Important fields:
 
 - GoPro Wi-Fi connection name in NetworkManager
 - GoPro media extensions to sync (for example `.jpg`, `.jpeg`, `.gpr`)
+- sync source (`wifi` or `sdcard`)
+- SD card source directory (either the `DCIM` folder or its mount root)
 - Home Wi-Fi connection name in NetworkManager
 - workspace path
 - NAS mount method / mount point / target path
@@ -78,6 +80,8 @@ Set these in `config/config.local.yaml` before relying on the timers:
 - `app.workspace`: defaults to `../GardeningWithGoProStorage`, which puts data/state/logs one level above the repo clone.
 - `gopro.wifi_connection_name`: the NetworkManager connection profile name for the GoPro Wi-Fi.
 - `gopro.media_extensions`: extensions eligible for sync. Default includes `.jpg`, `.jpeg`, and `.gpr`.
+- `sync.source`: `wifi` (default) or `sdcard`.
+- `sdcard.source_dir`: path to your SD card mount root or DCIM folder. Required when using `sync.source: sdcard`. `~` and env vars such as `$USER` are supported.
 - `home_network.wifi_connection_name`: the NetworkManager connection profile name for your normal Wi-Fi.
 - `nas.enabled`: defaults to `false`. Turn it on only after you finish the NAS configuration below.
 - `nas.mount_point`: where the NAS will be mounted on Mint.
@@ -131,6 +135,8 @@ bash scripts/pull_and_restart.sh
 source .venv/bin/activate
 pytest -q
 PYTHONPATH=src python -m gopro_gardening.cli sync
+PYTHONPATH=src python -m gopro_gardening.cli sync --source wifi
+PYTHONPATH=src python -m gopro_gardening.cli sync --source sdcard
 PYTHONPATH=src python -m gopro_gardening.cli encode-upload
 PYTHONPATH=src python -m gopro_gardening.cli healthcheck
 PYTHONPATH=src python -m gopro_gardening.cli mount-nas
@@ -140,6 +146,7 @@ PYTHONPATH=src python -m gopro_gardening.cli unmount-nas
 ## Notes
 
 - The sync engine only downloads missing files.
+- Wi-Fi sync and SD card sync share the same SQLite state, so files imported via SD card are not re-downloaded later via Wi-Fi.
 - Sync stats now include `remote_total` and `eligible_total` so you can verify what the camera exposed vs what passed extension filters.
 - Sync stats include `ignored_extension` for files filtered out by `gopro.media_extensions`.
 - Interrupted downloads are resumed from `.part` files when the GoPro server supports HTTP range requests.

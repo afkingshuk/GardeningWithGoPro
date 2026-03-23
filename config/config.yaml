@@ -24,10 +24,14 @@ paths:
   logs_dir: logs
 
 sync:
+  source: wifi
   stable_file_min_age_seconds: 120
   retry_failed_downloads: true
   max_retries: 3
   user_agent: gopro-gardening-pipeline/0.1
+
+sdcard:
+  source_dir: ""
 
 encoding:
   fps: 24

@@ -9,6 +9,14 @@ gopro:
     - .jpeg
     - .gpr
 
+sync:
+  source: wifi
+
+sdcard:
+  # Either the DCIM directory itself, or a mount root that contains DCIM.
+  # Example: /media/$USER/GOPROSD or /media/$USER/GOPROSD/DCIM
+  source_dir: ""
+
 home_network:
   wifi_connection_name: No_Connection
 

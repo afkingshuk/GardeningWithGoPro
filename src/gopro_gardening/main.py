@@ -14,6 +14,7 @@ from .encoder import Encoder
 from .gopro_client import GoProClient
 from .logging_utils import configure_logging
 from .nas import NASUploader
+from .sdcard_sync import SDCardSyncEngine
 from .state_db import StateDB
 from .sync_engine import SyncEngine
 from .wifi_manager import WifiManager
@@ -29,6 +30,7 @@ class AppContext:
     wifi: WifiManager
     client: GoProClient
     sync_engine: SyncEngine
+    sdcard_sync: SDCardSyncEngine
     encoder: Encoder
     nas: NASUploader
 
@@ -36,7 +38,7 @@ class AppContext:
 def _resolve_path(base_dir: Path, value: str | None) -> Path | None:
     if not value:
         return None
-    path = Path(value).expanduser()
+    path = Path(os.path.expandvars(value)).expanduser()
     if path.is_absolute():
         return path.resolve()
     return (base_dir / path).resolve()
@@ -58,6 +60,24 @@ def _resolve_target_dir(root_dir: Path, mount_point: Path | None, value: str) ->
     if mount_point is not None:
         return (mount_point / target_dir).resolve()
     return (root_dir / target_dir).resolve()
+
+
+def _normalize_sync_source(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    aliases = {
+        "wifi": "wifi",
+        "gopro": "wifi",
+        "camera": "wifi",
+        "sd": "sdcard",
+        "sdcard": "sdcard",
+        "card": "sdcard",
+        "memcard": "sdcard",
+        "memorycard": "sdcard",
+    }
+    selected = aliases.get(normalized)
+    if selected:
+        return selected
+    raise ValueError(f"Unsupported sync source: {value}. Expected one of: wifi, sdcard")
 
 
 def build_context(root_dir: Path) -> AppContext:
@@ -88,6 +108,14 @@ def build_context(root_dir: Path) -> AppContext:
         stable_file_min_age_seconds=int(config["sync"].get("stable_file_min_age_seconds", 0)),
         retry_failed_downloads=bool(config["sync"].get("retry_failed_downloads", True)),
         max_retries=int(config["sync"].get("max_retries", 3)),
+    )
+    sdcard_sync = SDCardSyncEngine(
+        state_db=state_db,
+        source_dir=_resolve_path(root_dir, config.get("sdcard", {}).get("source_dir")),
+        raw_dir=workspace / config["paths"]["raw_dir"],
+        indexed_dir=workspace / config["paths"]["indexed_dir"],
+        media_extensions=config["gopro"]["media_extensions"],
+        timezone_name=config["app"].get("timezone", "UTC"),
     )
     encoder = Encoder(
         indexed_dir=workspace / config["paths"]["indexed_dir"],
@@ -123,20 +151,30 @@ def build_context(root_dir: Path) -> AppContext:
         wifi=wifi,
         client=client,
         sync_engine=sync_engine,
+        sdcard_sync=sdcard_sync,
         encoder=encoder,
         nas=nas,
     )
 
 
-def run_sync(context: AppContext) -> None:
-    logger.info("Starting sync run")
-    context.wifi.connect_gopro()
-    try:
-        stats = context.sync_engine.sync_missing_files()
-        logger.info("Sync stats: %s", stats)
-    finally:
-        context.wifi.disconnect(context.config["gopro"]["wifi_connection_name"])
-        context.wifi.connect_home()
+def run_sync(context: AppContext, source_override: str | None = None) -> None:
+    configured_source = context.config.get("sync", {}).get("source", "wifi")
+    source = _normalize_sync_source(source_override or configured_source)
+    logger.info("Starting sync run (source=%s)", source)
+
+    if source == "wifi":
+        context.wifi.connect_gopro()
+        try:
+            stats = context.sync_engine.sync_missing_files()
+            logger.info("Sync stats: %s", stats)
+        finally:
+            context.wifi.disconnect(context.config["gopro"]["wifi_connection_name"])
+            context.wifi.connect_home()
+        logger.info("Sync run completed")
+        return
+
+    stats = context.sdcard_sync.sync_missing_files()
+    logger.info("SD card sync stats: %s", stats)
     logger.info("Sync run completed")
 
 
@@ -171,6 +209,7 @@ def run_encode_upload(context: AppContext) -> None:
 
 
 def run_healthcheck(context: AppContext) -> None:
+    sync_source = _normalize_sync_source(context.config.get("sync", {}).get("source", "wifi"))
     required_commands = ["nmcli", "ffmpeg"]
     if context.config["nas"].get("enabled", True):
         required_commands.append("rsync" if context.config["nas"].get("use_rsync", True) else "cp")
@@ -182,14 +221,22 @@ def run_healthcheck(context: AppContext) -> None:
         raise RuntimeError(f"Missing required commands: {', '.join(sorted(missing))}")
 
     connections = set(context.wifi.list_connections())
-    if context.wifi.gopro_connection not in connections:
+    if sync_source == "wifi" and context.wifi.gopro_connection not in connections:
         raise RuntimeError(
             f"GoPro NetworkManager connection not found: {context.wifi.gopro_connection}"
         )
-    if context.wifi.home_connection and context.wifi.home_connection not in connections:
+    should_require_home_connection = bool(context.config["nas"].get("enabled", True)) or sync_source == "wifi"
+    if (
+        should_require_home_connection
+        and context.wifi.home_connection
+        and context.wifi.home_connection not in connections
+    ):
         raise RuntimeError(
             f"Home NetworkManager connection not found: {context.wifi.home_connection}"
         )
+
+    if sync_source == "sdcard" and not context.config.get("sdcard", {}).get("source_dir"):
+        raise RuntimeError("sdcard.source_dir is required when sync.source is sdcard")
 
     if context.config["nas"].get("enabled", True):
         mount_method = context.config["nas"].get("mount_method", "fstab")
