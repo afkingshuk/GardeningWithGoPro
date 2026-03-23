@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import deque
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -33,23 +35,18 @@ class DownloadValidationError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class DirectoryListingEntry:
+    href: str
+    modified_at: datetime | None = None
+
+
 class GoProClient:
     def __init__(self, base_url: str, timeout: int = 30, user_agent: str = "gopro-gardening-pipeline/0.1") -> None:
-        self.base_url = base_url
+        self.base_url = base_url if base_url.endswith("/") else f"{base_url}/"
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
         self.timeout = timeout
-
-    def _api_root(self) -> str:
-        parts = urlsplit(self.base_url)
-        return f"{parts.scheme}://{parts.netloc}/"
-
-    def _media_list_endpoints(self) -> list[str]:
-        api_root = self._api_root()
-        return [
-            urljoin(api_root, "gopro/media/list"),
-            urljoin(api_root, "gp/gpMediaList"),
-        ]
 
     @staticmethod
     def _parse_int(value: object) -> int | None:
@@ -61,120 +58,154 @@ class GoProClient:
             return None
 
     @staticmethod
-    def _parse_epoch(value: object) -> datetime | None:
-        parsed = GoProClient._parse_int(value)
-        if parsed is None:
-            return None
-        return datetime.fromtimestamp(parsed, tz=timezone.utc)
-
-    @staticmethod
     def _parse_content_range_total(value: str | None) -> int | None:
         if not value or "/" not in value:
             return None
         return GoProClient._parse_int(value.rsplit("/", 1)[1])
 
-    def _parse_media_list_payload(self, payload: object) -> list[RemoteMediaFile]:
-        if not isinstance(payload, dict):
-            return []
-
-        media_entries = payload.get("media")
-        if not isinstance(media_entries, list):
-            return []
-
-        files: list[RemoteMediaFile] = []
-        for media_entry in media_entries:
-            if not isinstance(media_entry, dict):
+    @staticmethod
+    def _parse_listing_datetime(value: str) -> datetime | None:
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        for fmt in (
+            "%d-%b-%Y %H:%M",
+            "%d-%b-%Y %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+        ):
+            try:
+                naive = datetime.strptime(value, fmt)
+                return naive.replace(tzinfo=local_tz).astimezone(timezone.utc)
+            except ValueError:
                 continue
+        return None
 
-            media_dir = str(media_entry.get("d", "")).strip().rstrip("/")
-            if not media_dir:
+    @classmethod
+    def _extract_modified_from_text(cls, text: str) -> datetime | None:
+        text = " ".join(text.split())
+        if not text:
+            return None
+        for pattern in (
+            r"(\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}(?::\d{2})?)",
+            r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)",
+        ):
+            match = re.search(pattern, text)
+            if not match:
                 continue
+            parsed = cls._parse_listing_datetime(match.group(1))
+            if parsed is not None:
+                return parsed
+        return None
 
-            for file_entry in media_entry.get("fs", []) or []:
-                if not isinstance(file_entry, dict):
-                    continue
-                filename = str(file_entry.get("n", "")).strip()
-                if not filename:
-                    continue
-                files.append(
-                    RemoteMediaFile(
-                        media_dir=media_dir,
-                        filename=filename,
-                        size_bytes=self._parse_int(file_entry.get("s")),
-                        created_at=self._parse_epoch(file_entry.get("cre")),
-                        modified_at=self._parse_epoch(file_entry.get("mod")),
-                    )
-                )
-        return sorted(files, key=lambda item: (item.media_dir, item.filename))
-
-    def _get_links(self, url: str) -> List[str]:
+    def _get_directory_entries(self, url: str) -> List[DirectoryListingEntry]:
         r = self.session.get(url, timeout=self.timeout)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
-        return [a.get("href") for a in soup.find_all("a", href=True)]
-
-    def _list_media_files_via_api(self) -> list[RemoteMediaFile]:
-        last_error: Exception | None = None
-        for endpoint in self._media_list_endpoints():
-            try:
-                response = self.session.get(endpoint, timeout=self.timeout)
-                response.raise_for_status()
-                files = self._parse_media_list_payload(response.json())
-                if files:
-                    logger.info("Loaded %d media files from %s", len(files), endpoint)
-                    return files
-            except Exception as exc:
-                last_error = exc
-                logger.debug("Media list endpoint failed: %s", endpoint, exc_info=exc)
-
-        if last_error:
-            logger.info("Falling back to HTML media listing after API failure: %s", last_error)
-        return []
-
-    def _list_media_files_via_html(self) -> list[RemoteMediaFile]:
-        files: list[RemoteMediaFile] = []
-        try:
-            media_dirs = self.list_media_dirs()
-        except Exception as exc:
-            logger.warning("Failed to list media directories via HTML endpoint: %s", exc)
-            return files
-
-        for media_dir in media_dirs:
-            try:
-                dir_files = self.list_files(media_dir)
-            except Exception as exc:
-                logger.warning("Failed to list files for %s via HTML endpoint: %s", media_dir, exc)
+        entries: list[DirectoryListingEntry] = []
+        for anchor in soup.find_all("a", href=True):
+            href = anchor.get("href")
+            if not href:
                 continue
-            for filename in dir_files:
-                files.append(RemoteMediaFile(media_dir=media_dir.rstrip("/"), filename=filename))
-        return files
+
+            modified_at: datetime | None = None
+            parent_row = anchor.find_parent("tr")
+            if parent_row is not None:
+                modified_at = self._extract_modified_from_text(parent_row.get_text(" ", strip=True))
+            if modified_at is None and isinstance(anchor.next_sibling, str):
+                modified_at = self._extract_modified_from_text(anchor.next_sibling)
+            if modified_at is None and anchor.parent is not None:
+                modified_at = self._extract_modified_from_text(anchor.parent.get_text(" ", strip=True))
+
+            entries.append(DirectoryListingEntry(href=href, modified_at=modified_at))
+        return entries
+
+    def _get_links(self, url: str) -> List[str]:
+        return [entry.href for entry in self._get_directory_entries(url)]
+
+    @staticmethod
+    def _normalize_dir_url(url: str) -> str:
+        parts = urlsplit(url)
+        path = parts.path if parts.path.endswith("/") else f"{parts.path}/"
+        return parts._replace(path=path, query="", fragment="").geturl()
+
+    def _is_within_base(self, url: str) -> bool:
+        base = urlsplit(self.base_url)
+        target = urlsplit(url)
+        if (base.scheme, base.netloc) != (target.scheme, target.netloc):
+            return False
+        base_path = base.path if base.path.endswith("/") else f"{base.path}/"
+        return target.path.startswith(base_path)
+
+    def _build_remote_file(self, file_url: str, modified_at: datetime | None = None) -> RemoteMediaFile | None:
+        base = urlsplit(self.base_url)
+        target = urlsplit(file_url)
+        base_path = base.path if base.path.endswith("/") else f"{base.path}/"
+        if not target.path.startswith(base_path):
+            return None
+
+        relative_path = target.path[len(base_path):].lstrip("/")
+        if not relative_path or relative_path.endswith("/"):
+            return None
+
+        parts = [piece for piece in relative_path.split("/") if piece]
+        if not parts:
+            return None
+
+        filename = parts[-1]
+        media_dir = "/".join(parts[:-1])
+        return RemoteMediaFile(media_dir=media_dir, filename=filename, modified_at=modified_at)
+
+    def _list_media_files_recursive_html(self) -> list[RemoteMediaFile]:
+        start_url = self._normalize_dir_url(self.base_url)
+        queue: deque[str] = deque([start_url])
+        seen_dirs: set[str] = {start_url}
+        files: dict[tuple[str, str], RemoteMediaFile] = {}
+
+        while queue:
+            current_dir = queue.popleft()
+            try:
+                entries = self._get_directory_entries(current_dir)
+            except Exception as exc:
+                logger.warning("Failed to list %s: %s", current_dir, exc)
+                continue
+
+            for entry in entries:
+                href = entry.href
+                if not href:
+                    continue
+                href = href.strip()
+                if href in {"./", "../"}:
+                    continue
+
+                absolute_url = urljoin(current_dir, href)
+                absolute_url = urlsplit(absolute_url)._replace(query="", fragment="").geturl()
+                if not self._is_within_base(absolute_url):
+                    continue
+
+                if absolute_url.endswith("/"):
+                    normalized = self._normalize_dir_url(absolute_url)
+                    if normalized not in seen_dirs:
+                        seen_dirs.add(normalized)
+                        queue.append(normalized)
+                    continue
+
+                remote_file = self._build_remote_file(absolute_url, modified_at=entry.modified_at)
+                if remote_file is None:
+                    continue
+                key = (remote_file.media_dir, remote_file.filename)
+                existing = files.get(key)
+                if existing is None or (existing.modified_at is None and remote_file.modified_at is not None):
+                    files[key] = remote_file
+
+        logger.info(
+            "Discovered %d files across %d directories under %s",
+            len(files),
+            len(seen_dirs),
+            self.base_url,
+        )
+        return sorted(files.values(), key=lambda item: (item.media_dir, item.filename))
 
     def list_media_files(self) -> list[RemoteMediaFile]:
-        api_files = self._list_media_files_via_api()
-        html_files = self._list_media_files_via_html()
-
-        if not api_files and not html_files:
-            return []
-
-        merged: dict[tuple[str, str], RemoteMediaFile] = {}
-        for file_info in html_files:
-            merged[(file_info.media_dir, file_info.filename)] = file_info
-        for file_info in api_files:
-            merged[(file_info.media_dir, file_info.filename)] = file_info
-
-        if api_files and html_files and len(api_files) != len(html_files):
-            logger.warning(
-                "Media list source count mismatch: api=%d html=%d merged=%d",
-                len(api_files),
-                len(html_files),
-                len(merged),
-            )
-        elif api_files and not html_files:
-            logger.info("Using API media list only (%d files); HTML listing unavailable", len(api_files))
-        elif html_files and not api_files:
-            logger.info("Using HTML media list only (%d files); API listing unavailable", len(html_files))
-
-        return sorted(merged.values(), key=lambda item: (item.media_dir, item.filename))
+        return self._list_media_files_recursive_html()
 
     def list_media_dirs(self) -> List[str]:
         links = self._get_links(self.base_url)
@@ -189,8 +220,11 @@ class GoProClient:
         return sorted(files)
 
     def download_file(self, remote_file: RemoteMediaFile, destination: os.PathLike[str] | str) -> DownloadResult:
-        media_dir = remote_file.media_dir.rstrip("/") + "/"
-        file_url = urljoin(urljoin(self.base_url, media_dir), remote_file.filename)
+        if remote_file.media_dir:
+            relative_path = f"{remote_file.media_dir.rstrip('/')}/{remote_file.filename}"
+        else:
+            relative_path = remote_file.filename
+        file_url = urljoin(self.base_url, relative_path)
         destination_path = os.fspath(destination)
         part_path = f"{destination_path}.part"
         existing_bytes = os.path.getsize(part_path) if os.path.exists(part_path) else 0

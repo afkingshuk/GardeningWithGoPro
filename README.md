@@ -69,7 +69,7 @@ Important fields:
 - NAS mount method / mount point / target path
 - codec / fps / CRF
 - timezone
-- sync retry / stability settings
+- sync retry settings
 
 ## Required Mint-specific values
 
@@ -87,7 +87,7 @@ Set these in `config/config.local.yaml` before relying on the timers:
 - `nas.credentials_file`: recommended for SMB credentials, for example `~/.smbcredentials-gopro`.
 - `nas.use_sudo`: set to `true` if mount point creation or mount/umount require `sudo -n`.
 - `nas.mount_options`: optional extra mount options for SMB.
-- `sync.stable_file_min_age_seconds`: how long a remote file must be unchanged before it is eligible to sync.
+- `sync.stable_file_min_age_seconds`: uses remote timestamps when available (GoPro directory `Modified` column and HTTP `Last-Modified`); if missing, files are treated as eligible immediately.
 - `sync.max_retries`: how many attempts to make before leaving a file for the next cycle.
 - `encoding.fps`, `encoding.codec`, `encoding.crf`, `encoding.preset`: optional encoding overrides.
 - `app.timezone`: should match the timezone you want to use when deciding whether a capture date is "today".
@@ -145,7 +145,7 @@ PYTHONPATH=src python -m gopro_gardening.cli unmount-nas
 - Interrupted downloads are resumed from `.part` files when the GoPro server supports HTTP range requests.
 - GoPro Wi-Fi sync may fail while the camera is actively capturing; the next scheduled run should retry once the camera is idle and the Wi-Fi API is available again.
 - Capture date is determined from EXIF first, then filesystem mtime.
-- If the GoPro media-list API provides timestamps, synced files inherit that remote timestamp so fallback ordering is still meaningful.
+- File discovery is done by recursively crawling `http://10.5.5.9:8080/videos/DCIM/` and collecting files from all reachable subfolders.
 - Images are organized by capture date, not sync time.
 - The renderer skips the current date by default and only renders past, complete days.
 - Daily encoding uses timestamps recorded in SQLite, not just filename sort order.
