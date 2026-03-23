@@ -31,7 +31,7 @@ sync:
   user_agent: gopro-gardening-pipeline/0.1
 
 sdcard:
-  source_dir: ""
+  source_dir: "/media/kingshuk/LINUX MINT"
 
 encoding:
   fps: 24
