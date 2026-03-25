@@ -76,6 +76,16 @@ class StateDB:
         )
         return cur.fetchone() is not None
 
+    def get_download_size(self, media_dir: str, filename: str) -> int | None:
+        cur = self.conn.execute(
+            "SELECT size_bytes FROM downloaded_files WHERE media_dir = ? AND filename = ? LIMIT 1",
+            (media_dir, filename),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return int(row[0]) if row[0] is not None else None
+
     def record_download(
         self,
         media_dir: str,
@@ -158,3 +168,6 @@ class StateDB:
                 record.filename,
             ),
         )
+
+    def close(self) -> None:
+        self.conn.close()

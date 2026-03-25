@@ -69,7 +69,7 @@ Important fields:
 - Home Wi-Fi connection name in NetworkManager
 - workspace path
 - NAS mount method / mount point / target path
-- codec / fps / CRF
+- encoding profile (`quality` or `fast`) plus codec / fps / CRF
 - timezone
 - sync retry settings
 
@@ -82,6 +82,8 @@ Set these in `config/config.local.yaml` before relying on the timers:
 - `gopro.media_extensions`: extensions eligible for sync. Default includes `.jpg`, `.jpeg`, and `.gpr`.
 - `sync.source`: `wifi` (default) or `sdcard`.
 - `sdcard.source_dir`: path to your SD card mount root or DCIM folder. Required when using `sync.source: sdcard`. `~` and env vars such as `$USER` are supported.
+- `sdcard.show_progress`: enable single-line live progress in terminal during SD import.
+- `sdcard.estimated_copy_speed_mb_per_sec`: used for SD import ETA estimate shown at pre-scan.
 - `home_network.wifi_connection_name`: the NetworkManager connection profile name for your normal Wi-Fi.
 - `nas.enabled`: defaults to `false`. Turn it on only after you finish the NAS configuration below.
 - `nas.mount_point`: where the NAS will be mounted on Mint.
@@ -93,7 +95,10 @@ Set these in `config/config.local.yaml` before relying on the timers:
 - `nas.mount_options`: optional extra mount options for SMB.
 - `sync.stable_file_min_age_seconds`: uses remote timestamps when available (GoPro directory `Modified` column and HTTP `Last-Modified`); if missing, files are treated as eligible immediately.
 - `sync.max_retries`: how many attempts to make before leaving a file for the next cycle.
-- `encoding.fps`, `encoding.codec`, `encoding.crf`, `encoding.preset`: optional encoding overrides.
+- `encoding.profile`: choose `quality` (default) or `fast`.
+- `encoding.profiles.<name>`: profile overrides applied on top of base encoding settings.
+- `encoding.fps`, `encoding.codec`: optional global encoding overrides.
+- `encoding.profiles.quality` / `encoding.profiles.fast`: recommended place to customize `preset` and `crf`.
 - `app.timezone`: should match the timezone you want to use when deciding whether a capture date is "today".
 
 NAS scripts are now wrappers around the Python CLI. You normally do not edit them unless you want a fully custom mount flow:
@@ -141,12 +146,46 @@ PYTHONPATH=src python -m gopro_gardening.cli encode-upload
 PYTHONPATH=src python -m gopro_gardening.cli healthcheck
 PYTHONPATH=src python -m gopro_gardening.cli mount-nas
 PYTHONPATH=src python -m gopro_gardening.cli unmount-nas
+PYTHONPATH=src python -m gopro_gardening.cli ui --host 127.0.0.1 --port 8787
 ```
+
+## Fast Mode Toggle
+
+For faster backlog rendering, set this in `config/config.local.yaml`:
+
+```yaml
+encoding:
+  profile: fast
+```
+
+Built-in profiles:
+
+- `quality`: `preset: medium`, `crf: 18`
+- `fast`: `preset: veryfast`, `crf: 22`
+
+## Web Dashboard
+
+If you prefer UI over CLI, run:
+
+```bash
+bash scripts/run_ui.sh
+```
+
+Then open `http://127.0.0.1:8787` in your browser. The dashboard provides buttons for:
+
+- Sync (Wi-Fi)
+- Sync (SD card)
+- Encode + Upload
+- Healthcheck
+- Mount / Unmount NAS
+
+Note: full Quik-style USB camera command/control depends on camera model and firmware. For the original GoPro MAX, use Wi-Fi control and SD ingest paths in this project.
 
 ## Notes
 
 - The sync engine only downloads missing files.
 - Wi-Fi sync and SD card sync share the same SQLite state, so files imported via SD card are not re-downloaded later via Wi-Fi.
+- SD card sync performs a pre-scan and reports `remote_total`, `eligible_total`, `actionable_total`, `copyable_total`, estimated copy time, and live progress.
 - Sync stats now include `remote_total` and `eligible_total` so you can verify what the camera exposed vs what passed extension filters.
 - Sync stats include `ignored_extension` for files filtered out by `gopro.media_extensions`.
 - Interrupted downloads are resumed from `.part` files when the GoPro server supports HTTP range requests.

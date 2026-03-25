@@ -16,6 +16,7 @@ def test_state_db_roundtrip(tmp_path: Path) -> None:
         "2026-03-17",
     )
     assert db.has_downloaded("100GOPRO", "G001.jpg")
+    assert db.get_download_size("100GOPRO", "G001.jpg") == 100
 
 
 def test_state_db_orders_day_media_by_capture_ts(tmp_path: Path) -> None:

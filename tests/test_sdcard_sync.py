@@ -34,6 +34,8 @@ def test_sdcard_sync_imports_and_records_files(tmp_path: Path) -> None:
 
     assert stats["remote_total"] == 3
     assert stats["eligible_total"] == 2
+    assert stats["actionable_total"] == 2
+    assert stats["copyable_total"] == 2
     assert stats["downloaded"] == 2
     assert stats["ignored_extension"] == 1
     assert stats["failed"] == 0
@@ -46,6 +48,8 @@ def test_sdcard_sync_imports_and_records_files(tmp_path: Path) -> None:
     stats_second = engine.sync_missing_files()
     assert stats_second["downloaded"] == 0
     assert stats_second["skipped"] == 2
+    assert stats_second["actionable_total"] == 0
+    assert stats_second["copyable_total"] == 0
 
 
 def test_sdcard_sync_registers_existing_raw_file_without_copy(tmp_path: Path) -> None:
@@ -85,3 +89,24 @@ def test_sdcard_sync_overwrites_mismatched_existing_raw_file(tmp_path: Path) -> 
     assert stats["failed"] == 0
     assert raw_target.read_bytes() == b"source-bytes"
     assert state_db.has_downloaded("100GOPRO", "A001.JPG")
+
+
+def test_sdcard_sync_reimports_when_source_file_is_updated(tmp_path: Path) -> None:
+    sdmount = tmp_path / "sdmount"
+    (sdmount / "DCIM" / "100GOPRO").mkdir(parents=True)
+    source_file = sdmount / "DCIM" / "100GOPRO" / "A001.JPG"
+    source_file.write_bytes(b"old")
+
+    engine, state_db, raw_dir, _indexed_dir = _make_engine(tmp_path, sdmount)
+    first = engine.sync_missing_files()
+    assert first["downloaded"] == 1
+    assert first["updated"] == 0
+
+    source_file.write_bytes(b"newer-content")
+    second = engine.sync_missing_files()
+
+    assert second["downloaded"] == 1
+    assert second["updated"] == 1
+    assert second["copyable_total"] == 1
+    assert (raw_dir / "100GOPRO" / "A001.JPG").read_bytes() == b"newer-content"
+    assert state_db.get_download_size("100GOPRO", "A001.JPG") == len(b"newer-content")

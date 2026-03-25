@@ -17,5 +17,5 @@ def organize_by_capture_date(src_path: Path, indexed_root: Path, capture_date: s
             target.hardlink_to(src_path)
         except Exception:
             shutil.copy2(src_path, target)
-        logger.info("Indexed %s -> %s", src_path, target)
+        logger.debug("Indexed %s -> %s", src_path, target)
     return target

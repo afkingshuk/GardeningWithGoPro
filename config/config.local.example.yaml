@@ -16,6 +16,8 @@ sdcard:
   # Either the DCIM directory itself, or a mount root that contains DCIM.
   # Example: /media/$USER/GOPROSD or /media/$USER/GOPROSD/DCIM
   source_dir: ""
+  show_progress: true
+  estimated_copy_speed_mb_per_sec: 25
 
 home_network:
   wifi_connection_name: No_Connection
@@ -35,7 +37,15 @@ nas:
   unmount_script: scripts/unmount_nas.sh
 
 encoding:
+  profile: quality
+  # Use `fast` for backlog catch-up encoding.
+  # profile: fast
   fps: 24
   codec: libx264
-  crf: 18
-  preset: medium
+  profiles:
+    quality:
+      preset: medium
+      crf: 18
+    fast:
+      preset: veryfast
+      crf: 22

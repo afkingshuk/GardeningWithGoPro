@@ -80,9 +80,52 @@ def _normalize_sync_source(value: str) -> str:
     raise ValueError(f"Unsupported sync source: {value}. Expected one of: wifi, sdcard")
 
 
+def _resolve_encoding_settings(config: Dict[str, Any]) -> Dict[str, Any]:
+    encoding = dict(config.get("encoding", {}))
+    profile = str(encoding.get("profile", "quality")).strip().lower()
+
+    profiles: dict[str, dict[str, Any]] = {
+        "quality": {
+            "preset": "medium",
+            "crf": 18,
+        },
+        "fast": {
+            "preset": "veryfast",
+            "crf": 22,
+        },
+    }
+
+    user_profiles = encoding.get("profiles", {})
+    if isinstance(user_profiles, dict):
+        for raw_name, raw_overrides in user_profiles.items():
+            if not isinstance(raw_overrides, dict):
+                continue
+            name = str(raw_name).strip().lower()
+            merged = dict(profiles.get(name, {}))
+            merged.update(raw_overrides)
+            profiles[name] = merged
+
+    if profile not in profiles:
+        valid_profiles = ", ".join(sorted(profiles))
+        raise ValueError(f"Invalid encoding.profile: {profile}. Valid options: {valid_profiles}")
+
+    resolved = dict(encoding)
+    resolved.update(profiles[profile])
+    resolved["profile"] = profile
+    resolved["profiles"] = profiles
+    resolved.setdefault("fps", 24)
+    resolved.setdefault("codec", "libx264")
+    resolved.setdefault("crf", 18)
+    resolved.setdefault("preset", "medium")
+    resolved.setdefault("pixel_format", "yuv420p")
+    resolved.setdefault("output_extension", "mp4")
+    return resolved
+
+
 def build_context(root_dir: Path) -> AppContext:
     root_dir = root_dir.resolve()
     config = load_config(root_dir)
+    config["encoding"] = _resolve_encoding_settings(config)
 
     workspace = _resolve_path(root_dir, config.get("app", {}).get("workspace", ".")) or root_dir.resolve()
     log_dir = workspace / config["paths"]["logs_dir"]
@@ -116,17 +159,21 @@ def build_context(root_dir: Path) -> AppContext:
         indexed_dir=workspace / config["paths"]["indexed_dir"],
         media_extensions=config["gopro"]["media_extensions"],
         timezone_name=config["app"].get("timezone", "UTC"),
+        estimated_copy_speed_mb_per_sec=float(
+            config.get("sdcard", {}).get("estimated_copy_speed_mb_per_sec", 25.0)
+        ),
+        show_progress=bool(config.get("sdcard", {}).get("show_progress", True)),
     )
     encoder = Encoder(
         indexed_dir=workspace / config["paths"]["indexed_dir"],
         renders_dir=workspace / config["paths"]["renders_dir"],
         reports_dir=workspace / config["paths"]["reports_dir"],
-        fps=config["encoding"]["fps"],
-        codec=config["encoding"]["codec"],
-        crf=config["encoding"]["crf"],
-        preset=config["encoding"]["preset"],
-        pixel_format=config["encoding"]["pixel_format"],
-        output_extension=config["encoding"]["output_extension"],
+        fps=int(config["encoding"]["fps"]),
+        codec=str(config["encoding"]["codec"]),
+        crf=int(config["encoding"]["crf"]),
+        preset=str(config["encoding"]["preset"]),
+        pixel_format=str(config["encoding"]["pixel_format"]),
+        output_extension=str(config["encoding"]["output_extension"]),
     )
     nas_mount_point = _resolve_path(root_dir, config["nas"].get("mount_point"))
     nas = NASUploader(
@@ -180,6 +227,14 @@ def run_sync(context: AppContext, source_override: str | None = None) -> None:
 
 def run_encode_upload(context: AppContext) -> None:
     logger.info("Starting encode/upload run")
+    logger.info(
+        "Encoding profile: %s (codec=%s, preset=%s, crf=%s, fps=%s)",
+        context.config["encoding"].get("profile", "quality"),
+        context.config["encoding"].get("codec"),
+        context.config["encoding"].get("preset"),
+        context.config["encoding"].get("crf"),
+        context.config["encoding"].get("fps"),
+    )
     today = _current_capture_date(context.config)
     skip_current_day = context.config["encoding"].get("skip_current_day", True)
     min_frames = int(context.config["encoding"].get("min_frames_for_render", 300))

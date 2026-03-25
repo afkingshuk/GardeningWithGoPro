@@ -32,14 +32,22 @@ sync:
 
 sdcard:
   source_dir: "/media/kingshuk/LINUX MINT"
+  show_progress: true
+  estimated_copy_speed_mb_per_sec: 25
 
 encoding:
+  profile: quality
   fps: 24
   codec: libx264
-  crf: 18
-  preset: medium
   pixel_format: yuv420p
   output_extension: mp4
+  profiles:
+    quality:
+      preset: medium
+      crf: 18
+    fast:
+      preset: veryfast
+      crf: 22
   skip_current_day: true
   min_frames_for_render: 300
   include_overlay_report: false
