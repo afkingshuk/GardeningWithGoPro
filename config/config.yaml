@@ -36,7 +36,7 @@ sdcard:
   estimated_copy_speed_mb_per_sec: 25
 
 encoding:
-  profile: quality
+  profile: fast
   fps: 24
   codec: libx264
   pixel_format: yuv420p

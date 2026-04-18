@@ -37,9 +37,8 @@ nas:
   unmount_script: scripts/unmount_nas.sh
 
 encoding:
-  profile: quality
-  # Use `fast` for backlog catch-up encoding.
-  # profile: fast
+  profile: fast
+  # Switch to `quality` for slower encoding with higher compression efficiency.
   fps: 24
   codec: libx264
   profiles:
